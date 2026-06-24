@@ -383,6 +383,21 @@ class _InsertTab extends ConsumerWidget {
               ],
             ),
             _Section(
+              label: 'دمج',
+              children: [
+                _InsertBtn(
+                  icon: Icons.merge_type,
+                  tooltip: 'دمج الخلايا المحددة',
+                  onTap: () => _mergeSelectedCells(ref, context),
+                ),
+                _InsertBtn(
+                  icon: Icons.merge_type_outlined,
+                  tooltip: 'إلغاء دمج الخلية',
+                  onTap: () => _unmergeSelectedCell(ref, context),
+                ),
+              ],
+            ),
+            _Section(
               label: 'أخرى',
               children: [
                 _InsertBtn(
@@ -410,6 +425,57 @@ class _InsertTab extends ConsumerWidget {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  /// دمج الخلايا المحددة.
+  /// إذا كانت الخلية المحددة مفردة، يُدمج نطاقاً افتراضياً (مثلاً العمود الحالي).
+  /// إذا كان النطاق محدداً، يُدمج حسب الامتداد.
+  static void _mergeSelectedCells(WidgetRef ref, BuildContext context) {
+    final selected = ref.read(selectedCellProvider);
+    if (selected == null) {
+      _showComingSoon(context, 'اختر خلايا للدمج');
+      return;
+    }
+
+    // دمج النطاق المحدد (حالياً نمرر نفس الخلية كنطاق بسيط)
+    // في الإصدارات المستقبلية، سيتم دعم تحديد نطاق
+    final sheetId = selected.sheetId;
+    final cellRef = selected.ref;
+
+    // البحث عن نطاق مناسب: إذا كانت الخلية في منطقة مدمجة، نلغي الدمج
+    // وإلا ندمج الخلية مع الخلية التي على يمينها (للاختبار)
+    try {
+      final workbook = ref.read(workbookProvider).workbook;
+      final sheet = workbook.sheets.firstWhere((s) => s.id == sheetId);
+      final existingMerge = sheet.findMergeRegion(cellRef);
+
+      if (existingMerge != null) {
+        // موجودة في منطقة مدمجة — إلغاء الدمج
+        ref.read(workbookProvider.notifier).unmergeCell(sheetId, cellRef);
+      } else {
+        // إنشاء نطاق دمج بسيط (خلية واحدة) كمثال
+        // في الإصدار الكامل سيُدمج النطاق المحدد
+        final parsed = Cell.parseReference(cellRef);
+        if (parsed != null) {
+          final (row, col) = parsed;
+          final endRef = '${Cell.columnLetters(col + 1)}${row + 1}';
+          ref.read(workbookProvider.notifier).mergeRange(sheetId, cellRef, endRef);
+        }
+      }
+    } catch (_) {
+      _showComingSoon(context, 'تعذر الدمج');
+    }
+  }
+
+  /// إلغاء دمج الخلية المحددة.
+  static void _unmergeSelectedCell(WidgetRef ref, BuildContext context) {
+    final selected = ref.read(selectedCellProvider);
+    if (selected == null) {
+      _showComingSoon(context, 'اختر خلية لإلغاء دمجها');
+      return;
+    }
+
+    ref.read(workbookProvider.notifier).unmergeCell(selected.sheetId, selected.ref);
   }
 }
 

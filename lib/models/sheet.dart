@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'package:collection/collection.dart';
 import 'cell.dart';
+import 'merge_region.dart';
 
 /// نموذج الورقة (Sheet)
 ///
@@ -25,12 +26,16 @@ class Sheet {
   /// عدد الأعمدة في الورقة
   final int columnCount;
 
+  /// قائمة المناطق المدمجة في الورقة
+  final List<MergeRegion> mergedRegions;
+
   const Sheet({
     required this.id,
     this.name = 'ورقة1',
     this.cells = const {},
     this.rowCount = 100,
     this.columnCount = 100,
+    this.mergedRegions = const [],
   });
 
   // ---------------------------------------------------------------------------
@@ -128,6 +133,97 @@ class Sheet {
   int get cellCount => cells.length;
 
   // ---------------------------------------------------------------------------
+  // Cell merging
+  // ---------------------------------------------------------------------------
+
+  /// دمج نطاق من الخلايا. يُعيد ورقة جديدة مع المنطقة المدمجة.
+  /// [startRef] مثل "A1"، [endRef] مثل "C3".
+  Sheet mergeRange(String startRef, String endRef) {
+    final startParsed = Cell.parseReference(startRef);
+    final endParsed = Cell.parseReference(endRef);
+    if (startParsed == null || endParsed == null) return this;
+
+    final (startRow, startCol) = startParsed;
+    final (endRow, endCol) = endParsed;
+
+    // التحقق من أن النطاق صالح (على الأقل خليتان)
+    if (startRow == endRow && startCol == endCol) return this;
+
+    final region = MergeRegion(
+      startRow: startRow,
+      startCol: startCol,
+      endRow: endRow,
+      endCol: endCol,
+    );
+
+    // التحقق من عدم التداخل مع مناطق مدمجة موجودة
+    for (final existing in mergedRegions) {
+      if (existing.overlaps(region)) return this;
+    }
+
+    // إزالة الخلايا غير الرئيسية من النطاق (الاحتفاظ فقط بالخلية الرئيسية)
+    var updatedCells = Map<String, Cell>.of(cells);
+    final primaryRef = region.primaryRef.toUpperCase().trim();
+    final primaryCell = getCell(primaryRef);
+
+    for (int r = startRow; r <= endRow; r++) {
+      for (int c = startCol; c <= endCol; c++) {
+        final ref = '${Cell.columnLetters(c)}${r + 1}';
+        final upperRef = ref.toUpperCase().trim();
+        if (upperRef != primaryRef) {
+          updatedCells.remove(upperRef);
+        }
+      }
+    }
+
+    // التأكد من وجود الخلية الرئيسية
+    updatedCells[primaryRef] = primaryCell;
+
+    return copyWith(
+      cells: updatedCells,
+      mergedRegions: [...mergedRegions, region],
+    );
+  }
+
+  /// إلغاء دمج خلية في [ref]. يُعيد ورقة جديدة بدون المنطقة المدمجة.
+  Sheet unmergeCell(String ref) {
+    final parsed = Cell.parseReference(ref);
+    if (parsed == null) return this;
+    final (row, col) = parsed;
+
+    final regionIdx = mergedRegions.indexWhere((r) => r.contains(row, col));
+    if (regionIdx < 0) return this;
+
+    final updatedRegions = List<MergeRegion>.of(mergedRegions)
+      ..removeAt(regionIdx);
+
+    return copyWith(mergedRegions: updatedRegions);
+  }
+
+  /// البحث عن المنطقة المدمجة التي تحتوي على الخلية في [ref].
+  /// يُعيد null إذا لم تكن الخلية ضمن أي منطقة مدمجة.
+  MergeRegion? findMergeRegion(String ref) {
+    final parsed = Cell.parseReference(ref);
+    if (parsed == null) return null;
+    final (row, col) = parsed;
+    try {
+      return mergedRegions.firstWhere((r) => r.contains(row, col));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// البحث عن المنطقة المدمجة التي تحتوي على الخلية في الموقع (row, col).
+  /// يُعيد null إذا لم تكن الخلية ضمن أي منطقة مدمجة.
+  MergeRegion? findMergeRegionAt(int row, int col) {
+    try {
+      return mergedRegions.firstWhere((r) => r.contains(row, col));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // copyWith (immutable update)
   // ---------------------------------------------------------------------------
 
@@ -137,6 +233,7 @@ class Sheet {
     Map<String, Cell>? cells,
     int? rowCount,
     int? columnCount,
+    List<MergeRegion>? mergedRegions,
   }) {
     return Sheet(
       id: id ?? this.id,
@@ -144,6 +241,7 @@ class Sheet {
       cells: cells ?? this.cells,
       rowCount: rowCount ?? this.rowCount,
       columnCount: columnCount ?? this.columnCount,
+      mergedRegions: mergedRegions ?? this.mergedRegions,
     );
   }
 
@@ -156,6 +254,7 @@ class Sheet {
         'name': name,
         'rowCount': rowCount,
         'columnCount': columnCount,
+        'mergedRegions': mergedRegions.map((r) => r.toJson()).toList(),
         'cells': cells.map((k, v) => MapEntry(k, v.toJson())),
       };
 
@@ -164,12 +263,17 @@ class Sheet {
     final cells = rawCells.map(
       (k, v) => MapEntry(k, Cell.fromJson(v as Map<String, dynamic>)),
     );
+    final rawRegions = json['mergedRegions'] as List? ?? [];
+    final mergedRegions = rawRegions
+        .map((r) => MergeRegion.fromJson(r as Map<String, dynamic>))
+        .toList();
     return Sheet(
       id: json['id'] as String,
       name: json['name'] as String? ?? 'ورقة1',
       rowCount: json['rowCount'] as int? ?? 100,
       columnCount: json['columnCount'] as int? ?? 100,
       cells: cells,
+      mergedRegions: mergedRegions,
     );
   }
 
@@ -185,10 +289,12 @@ class Sheet {
           name == other.name &&
           rowCount == other.rowCount &&
           columnCount == other.columnCount &&
+          const ListEquality().equals(mergedRegions, other.mergedRegions) &&
           const MapEquality().equals(cells, other.cells);
 
   @override
-  int get hashCode => Object.hash(id, name, rowCount, columnCount);
+  int get hashCode =>
+      Object.hash(id, name, rowCount, columnCount, Object.hashAll(mergedRegions));
 
   @override
   String toString() => 'Sheet($id, "$name", ${cells.length} cells)';

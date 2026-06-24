@@ -330,6 +330,44 @@ class WorkbookNotifier extends Notifier<WorkbookState> {
   }
 
   // ---------------------------------------------------------------------------
+  // Cell Merging
+  // ---------------------------------------------------------------------------
+
+  /// دمج نطاق خلايا في الورقة المحددة.
+  void mergeRange(String sheetId, String startRef, String endRef) {
+    _pushUndo();
+
+    final updatedSheets = state.workbook.sheets.map((sheet) {
+      if (sheet.id != sheetId) return sheet;
+      return sheet.mergeRange(startRef, endRef);
+    }).toList();
+
+    final updatedWorkbook = state.workbook.copyWith(sheets: updatedSheets);
+    state = state.copyWith(
+      workbook: updatedWorkbook,
+      isDirty: true,
+      statusMessage: '🔲 تم دمج $startRef:$endRef',
+    );
+  }
+
+  /// إلغاء دمج خلية في الورقة المحددة.
+  void unmergeCell(String sheetId, String cellRef) {
+    _pushUndo();
+
+    final updatedSheets = state.workbook.sheets.map((sheet) {
+      if (sheet.id != sheetId) return sheet;
+      return sheet.unmergeCell(cellRef);
+    }).toList();
+
+    final updatedWorkbook = state.workbook.copyWith(sheets: updatedSheets);
+    state = state.copyWith(
+      workbook: updatedWorkbook,
+      isDirty: true,
+      statusMessage: '🔓 تم إلغاء دمج $cellRef',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Undo / Redo
   // ---------------------------------------------------------------------------
 
