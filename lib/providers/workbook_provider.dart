@@ -153,6 +153,62 @@ class WorkbookNotifier extends Notifier<WorkbookState> {
     );
   }
 
+  /// إنهاء تحرير خلية مع دعم التراجع الصحيح.
+  ///
+  /// [originalValue] هي قيمة الخلية قبل بدء التحرير (حتى لو كانت real-time
+  /// قد غيّرتها). نقوم باستعادة القيمة الأصلية مؤقتاً، ثم دفعها إلى undo stack،
+  /// ثم تطبيق القيمة الجديدة. هذا يضمن أن التراجع يعيد الخلية إلى حالتها
+  /// قبل التحرير وليس إلى منتصف الكتابة.
+  void commitCellEdit(
+    String sheetId,
+    String cellIndex,
+    String newValue, {
+    String? originalValue,
+  }) {
+    if (originalValue != null &&
+        originalValue != newValue &&
+        _hasCellChanged(sheetId, cellIndex, originalValue)) {
+      // 1. استعادة القيمة الأصلية مؤقتاً (بدون دفع إلى undo)
+      final restoredSheets = state.workbook.sheets.map((sheet) {
+        if (sheet.id != sheetId) return sheet;
+        return sheet.setCell(cellIndex, originalValue);
+      }).toList();
+      final restoredWorkbook = state.workbook.copyWith(sheets: restoredSheets);
+      state = state.copyWith(workbook: restoredWorkbook);
+    }
+
+    // 2. دفع الحالة المستعادة إلى undo stack
+    _pushUndo();
+
+    // 3. تطبيق القيمة الجديدة
+    final updatedSheets = state.workbook.sheets.map((sheet) {
+      if (sheet.id != sheetId) return sheet;
+      return sheet.setCell(cellIndex, newValue);
+    }).toList();
+
+    final updatedWorkbook = state.workbook.copyWith(
+      sheets: updatedSheets,
+      clearComputedValues: newValue.startsWith('='),
+    );
+
+    state = state.copyWith(
+      workbook: updatedWorkbook,
+      isDirty: true,
+      statusMessage: '$cellIndex ← $newValue',
+    );
+  }
+
+  /// التحقق مما إذا كانت الخلية قد تغيرت عن القيمة الأصلية.
+  bool _hasCellChanged(String sheetId, String cellIndex, String originalValue) {
+    try {
+      final sheet = state.workbook.sheets.firstWhere((s) => s.id == sheetId);
+      final cell = sheet.getCell(cellIndex);
+      return cell.rawValue != originalValue;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// إضافة ورقة جديدة إلى المصنف.
   void addSheet({String? name}) {
     _pushUndo();

@@ -32,8 +32,8 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
 
   bool _isEditing = false;
   List<String> _suggestions = [];
-  String _lastCommittedValue = '';
-
+  // قيمة الخلية الأصلية قبل بدء التحرير (تُستخدم للتراجع الصحيح)
+  String _originalCellValue = '';
   // نمنع التحديث التلقائي للحقل أثناء التحرير
   bool _suppressSync = false;
 
@@ -64,11 +64,25 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
         _suggestions = [];
       });
     } else {
-      // عند بدء التحرير — حفظ القيمة الحالية للتراجع لاحقاً
+      // عند بدء التحرير — حفظ القيمة الأصلية للخلية للتراجع الصحيح
+      _captureOriginalValue();
       setState(() {
         _isEditing = true;
-        _lastCommittedValue = _controller.text;
       });
+    }
+  }
+
+  /// تسجيل القيمة الأصلية للخلية النشطة قبل أي تعديل (للتراجع).
+  void _captureOriginalValue() {
+    final selected = ref.read(selectedCellProvider);
+    if (selected == null) return;
+    try {
+      final workbook = ref.read(workbookProvider).workbook;
+      final sheet = workbook.sheets.firstWhere((s) => s.id == selected.sheetId);
+      final cell = sheet.getCell(selected.ref);
+      _originalCellValue = cell.rawValue;
+    } catch (_) {
+      _originalCellValue = '';
     }
   }
 
@@ -151,6 +165,7 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
   Widget _buildFxButton() {
     return GestureDetector(
       onTap: () {
+        _captureOriginalValue();
         _controller.text = '=';
         _controller.selection = const TextSelection.collapsed(offset: 1);
         setState(() => _isEditing = true);
@@ -184,9 +199,9 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
         isDense: true,
       ),
       onTap: () {
+        _captureOriginalValue();
         setState(() {
           _isEditing = true;
-          _lastCommittedValue = _controller.text;
         });
       },
       onChanged: (value) {
@@ -291,7 +306,10 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
         );
   }
 
-  /// حفظ القيمة المدخلة في الخلية النشطة مع حفظ في undo stack.
+  /// حفظ القيمة المدخلة في الخلية النشطة مع دعم التراجع الصحيح.
+  ///
+  /// تستخدم [commitCellEdit] بدلاً من [updateCell] لضمان أن undo stack
+  /// يحتوي على القيمة الأصلية للخلية (قبل التحرير) وليس آخر تحديث real-time.
   void _commitEdit() {
     if (!_isEditing && !_focusNode.hasFocus) return;
 
@@ -301,10 +319,11 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
     final text = _controller.text.trim();
 
     if (text.isNotEmpty) {
-      ref.read(workbookProvider.notifier).updateCell(
+      ref.read(workbookProvider.notifier).commitCellEdit(
             selected.sheetId,
             selected.ref,
             text,
+            originalValue: _originalCellValue,
           );
     }
 
