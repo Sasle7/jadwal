@@ -30,7 +30,7 @@ class Sheet {
     this.name = 'ورقة1',
     this.cells = const {},
     this.rowCount = 100,
-    this.columnCount = 26,
+    this.columnCount = 100,
   });
 
   // ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ class Sheet {
       id: json['id'] as String,
       name: json['name'] as String? ?? 'ورقة1',
       rowCount: json['rowCount'] as int? ?? 100,
-      columnCount: json['columnCount'] as int? ?? 26,
+      columnCount: json['columnCount'] as int? ?? 100,
       cells: cells,
     );
   }

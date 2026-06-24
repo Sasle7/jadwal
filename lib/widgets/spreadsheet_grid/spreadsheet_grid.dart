@@ -11,13 +11,12 @@ import '../../providers/workbook_provider.dart';
 
 /// مصدر البيانات للشبكة — يربط [Sheet] مع [SfDataGrid].
 ///
-/// يُعاد بناؤه بالكامل عند تغير الورقة، لكنه لا يُعاد بناء كل خلية
-/// عند تعديل خلية واحدة (لأن SfDataGrid يتولى إعادة الرسم الداخلي).
+/// يُعاد بناؤه بالكامل عند تغير الورقة.
 class SheetDataSource extends DataGridSource {
   final String sheetId;
-  final Sheet sheet;
+  Sheet sheet;
   final WorkbookNotifier notifier;
-  final CellPosition? activeCell;
+  CellPosition? activeCell;
 
   List<DataGridRow> _rows = [];
 
@@ -146,6 +145,8 @@ class SheetDataSource extends DataGridSource {
     required Sheet newSheet,
     required CellPosition? newActiveCell,
   }) {
+    sheet = newSheet;
+    activeCell = newActiveCell;
     _buildRows();
     notifyListeners();
   }
@@ -169,6 +170,9 @@ class SpreadsheetGrid extends ConsumerStatefulWidget {
 class _SpreadsheetGridState extends ConsumerState<SpreadsheetGrid> {
   late DataGridController _controller;
   SheetDataSource? _source;
+
+  /// تتبع عرض الأعمدة بعد تغيير حجمها يدوياً
+  final Map<String, double> _columnWidths = {};
 
   @override
   void initState() {
@@ -232,24 +236,34 @@ class _SpreadsheetGridState extends ConsumerState<SpreadsheetGrid> {
       allowSwiping: true,
       frozenColumnsCount: 1,
       frozenRowsCount: 1,
-      columnResizeMode: ColumnResizeMode.onResizeEnd,
+      columnResizeMode: ColumnResizeMode.onResize,
+      allowColumnsResizing: true,
       defaultColumnWidth: 120,
       // أعمدة
       columns: [
         GridColumn(
           columnName: 'rowHeader',
-          width: 50,
+          width: _columnWidths['rowHeader'] ?? 50,
           label: _buildColumnHeader('#'),
         ),
         for (int c = 0; c < sheet.columnCount; c++)
           GridColumn(
             columnName: 'col_$c',
+            width: _columnWidths['col_$c'] ?? 120,
             label: _buildColumnHeader(Cell.columnLetters(c)),
           ),
       ],
 
       onQueryRowHeight: (details) => 30.0,
       headerRowHeight: 30.0,
+
+      // تغيير حجم العمود ← حفظ العرض الجديد
+      onColumnResizeUpdate: (ColumnResizeUpdateDetails details) {
+        setState(() {
+          _columnWidths[details.column.columnName] = details.width;
+        });
+        return true;
+      },
 
       // نقر الخلية → تحديث الخلية النشطة
       onCellTap: (details) {

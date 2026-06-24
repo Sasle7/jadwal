@@ -116,6 +116,27 @@ class WorkbookNotifier extends Notifier<WorkbookState> {
     updateCell(state.workbook.activeSheetId, cellIndex, newValue);
   }
 
+  /// تحديث الخلية مباشرة (بدون حفظ في الـ Undo Stack) — للاستخدام في Real-time Sync.
+  ///
+  /// يُستخدم هذا عندما يكتب المستخدم في شريط الصيغ حرفاً حرفاً،
+  /// حتى لا يمتلئ undo stack بمئات الإدخالات المؤقتة.
+  void updateCellRealtime(String sheetId, String cellIndex, String newValue) {
+    final updatedSheets = state.workbook.sheets.map((sheet) {
+      if (sheet.id != sheetId) return sheet;
+      return sheet.setCell(cellIndex, newValue);
+    }).toList();
+
+    final updatedWorkbook = state.workbook.copyWith(
+      sheets: updatedSheets,
+      clearComputedValues: newValue.startsWith('='),
+    );
+
+    state = state.copyWith(
+      workbook: updatedWorkbook,
+      isDirty: true,
+    );
+  }
+
   /// إضافة ورقة جديدة إلى المصنف.
   void addSheet({String? name}) {
     _pushUndo();

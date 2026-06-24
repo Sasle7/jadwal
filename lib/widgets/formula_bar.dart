@@ -32,6 +32,7 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
 
   bool _isEditing = false;
   List<String> _suggestions = [];
+  String _lastCommittedValue = '';
 
   // نمنع التحديث التلقائي للحقل أثناء التحرير
   bool _suppressSync = false;
@@ -58,7 +59,16 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
   void _onFocusChanged() {
     if (!_focusNode.hasFocus) {
       _commitEdit();
-      setState(() => _isEditing = false);
+      setState(() {
+        _isEditing = false;
+        _suggestions = [];
+      });
+    } else {
+      // عند بدء التحرير — حفظ القيمة الحالية للتراجع لاحقاً
+      setState(() {
+        _isEditing = true;
+        _lastCommittedValue = _controller.text;
+      });
     }
   }
 
@@ -173,17 +183,28 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
         contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         isDense: true,
       ),
-      onTap: () => setState(() => _isEditing = true),
+      onTap: () {
+        setState(() {
+          _isEditing = true;
+          _lastCommittedValue = _controller.text;
+        });
+      },
       onChanged: (value) {
+        // تحديث الاقتراحات للصيغ
         if (value.startsWith('=')) {
           _updateSuggestions(value.substring(1));
         } else {
           setState(() => _suggestions = []);
         }
+        // تحديث الخلية في الوقت الفعلي (Real-time sync) حرفاً حرفاً
+        _updateCellRealtime(value);
       },
       onSubmitted: (value) {
         _commitEdit();
-        setState(() => _isEditing = false);
+        setState(() {
+          _isEditing = false;
+          _suggestions = [];
+        });
         _focusNode.unfocus();
       },
     );
@@ -258,7 +279,19 @@ class _FormulaBarState extends ConsumerState<FormulaBar> {
     });
   }
 
-  /// حفظ القيمة المدخلة في الخلية النشطة.
+  /// تحديث الخلية فورياً دون حفظ في undo stack (لكل حرف).
+  void _updateCellRealtime(String value) {
+    final selected = ref.read(selectedCellProvider);
+    if (selected == null) return;
+
+    ref.read(workbookProvider.notifier).updateCellRealtime(
+          selected.sheetId,
+          selected.ref,
+          value,
+        );
+  }
+
+  /// حفظ القيمة المدخلة في الخلية النشطة مع حفظ في undo stack.
   void _commitEdit() {
     if (!_isEditing && !_focusNode.hasFocus) return;
 
