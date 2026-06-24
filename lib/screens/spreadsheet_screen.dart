@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/workbook.dart';
 import '../providers/workbook_provider.dart';
+import '../services/hive_service.dart';
 import '../widgets/toolbar/ribbon_toolbar.dart';
 import '../widgets/formula_bar.dart';
 import '../widgets/spreadsheet_grid/spreadsheet_grid.dart';
@@ -136,7 +137,7 @@ class _SpreadsheetScreenState extends ConsumerState<SpreadsheetScreen> {
     );
   }
 
-  void _handleMenuAction(String value) {
+  void _handleMenuAction(String value) async {
     final notifier = ref.read(workbookProvider.notifier);
     switch (value) {
       case 'new':
@@ -146,10 +147,10 @@ class _SpreadsheetScreenState extends ConsumerState<SpreadsheetScreen> {
         notifier.loadWorkbook(Workbook.sample());
         break;
       case 'open':
-        notifier.setStatusMessage('اختر ملف لفتحه');
+        await _showOpenDialog();
         break;
       case 'save':
-        notifier.setStatusMessage('جاري الحفظ...');
+        await _saveCurrentWorkbook(notifier);
         break;
       case 'export_xlsx':
         notifier.setStatusMessage('جاري التصدير إلى XLSX...');
@@ -157,6 +158,96 @@ class _SpreadsheetScreenState extends ConsumerState<SpreadsheetScreen> {
       case 'export_csv':
         notifier.setStatusMessage('جاري التصدير إلى CSV...');
         break;
+    }
+  }
+
+  Future<void> _saveCurrentWorkbook(dynamic notifier) async {
+    final state = ref.read(workbookProvider);
+    try {
+      await HiveService.saveWorkbook(state.workbook);
+      notifier.setStatusMessage('💾 تم الحفظ بنجاح');
+    } catch (e) {
+      notifier.setStatusMessage('❌ فشل الحفظ: $e');
+    }
+  }
+
+  Future<void> _showOpenDialog() async {
+    final notifier = ref.read(workbookProvider.notifier);
+    try {
+      final metadataList = await HiveService.listSavedWorkbooks();
+      if (metadataList.isEmpty) {
+        notifier.setStatusMessage('لا توجد مصنفات محفوظة');
+        return;
+      }
+
+      if (!context.mounted) return;
+
+      final selected = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: const Text('فتح مصنف', style: TextStyle(fontFamily: 'Cairo')),
+            content: SizedBox(
+              width: 400,
+              height: 300,
+              child: ListView.builder(
+                itemCount: metadataList.length,
+                itemBuilder: (context, index) {
+                  final item = metadataList[index];
+                  return ListTile(
+                    title: Text(
+                      item['name'] as String? ?? 'بدون اسم',
+                      style: const TextStyle(fontFamily: 'Cairo'),
+                    ),
+                    subtitle: Text(
+                      'آخر حفظ: ${_formatDate(item['lastModified'] as String?)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () async {
+                        await HiveService.deleteWorkbook(item['id'] as String);
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                        _showOpenDialog();
+                      },
+                    ),
+                    onTap: () => Navigator.of(ctx).pop(item),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (selected != null && context.mounted) {
+        final workbook = await HiveService.loadWorkbook(selected['id'] as String);
+        if (workbook != null) {
+          notifier.loadWorkbook(workbook);
+          notifier.setStatusMessage('📂 تم فتح ${workbook.name}');
+        } else {
+          notifier.setStatusMessage('❌ فشل تحميل المصنف');
+        }
+      }
+    } catch (e) {
+      notifier.setStatusMessage('❌ خطأ: $e');
+    }
+  }
+
+  String _formatDate(String? iso) {
+    if (iso == null) return 'غير معروف';
+    try {
+      final dt = DateTime.parse(iso);
+      return '${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return 'غير معروف';
     }
   }
 }

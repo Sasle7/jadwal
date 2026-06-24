@@ -23,8 +23,34 @@ void main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   runApp(
+    // نستخدم ProviderScope مع overrides لتمرير "مُهيَّئ" يسمح باستدعاء init
     const ProviderScope(
-      child: JadwalApp(),
+      child: _AppInitializer(
+        child: JadwalApp(),
+      ),
     ),
   );
+}
+
+/// ويدجت تهيئة تستدعي [WorkbookNotifier.init()] بعد بناء ProviderScope.
+class _AppInitializer extends ConsumerStatefulWidget {
+  final Widget child;
+  const _AppInitializer({required this.child});
+
+  @override
+  ConsumerState<_AppInitializer> createState() => _AppInitializerState();
+}
+
+class _AppInitializerState extends ConsumerState<_AppInitializer> {
+  @override
+  void initState() {
+    super.initState();
+    // جدولة استدعاء init بعد بناء الإطار الأول
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(workbookProvider.notifier).init();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/workbook.dart';
 import '../models/sheet.dart';
 import '../models/cell.dart';
+import '../services/hive_service.dart';
 
 // =============================================================================
 // WorkbookState
@@ -79,7 +80,22 @@ class WorkbookNotifier extends Notifier<WorkbookState> {
 
   @override
   WorkbookState build() {
+    // لا يمكن تحميل من Hive هنا لأن build() متزامن (synchronous)
+    // يتم التحميل عبر init() الذي يُنادى من main.dart
     return WorkbookState(workbook: Workbook.createNew());
+  }
+
+  /// تهيئة المحاولة: محاولة تحميل آخر مصنف من التخزين المحلي.
+  /// يُنادى من [main.dart] بعد فتح صندوق Hive.
+  Future<void> init() async {
+    try {
+      final lastWorkbook = await HiveService.loadLastOpenedWorkbook();
+      if (lastWorkbook != null) {
+        state = WorkbookState(workbook: lastWorkbook);
+      }
+    } catch (_) {
+      // تجاهل الخطأ
+    }
   }
 
   // ---------------------------------------------------------------------------
