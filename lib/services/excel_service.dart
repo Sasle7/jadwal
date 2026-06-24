@@ -9,63 +9,60 @@ import '../models/cell.dart';
 class ExcelService {
   /// تصدير المصنف إلى ملف XLSX
   Future<String> exportToXlsx(Workbook workbook) async {
-    final excel = excel_lib.Excel.create();
+    final excel = excel_lib.Excel.createExcel();
 
     for (final sheet in workbook.sheets) {
       final excelSheet = excel[sheet.name];
 
-      // تجميع جميع الخلايا
-      final allCells = <String, Cell>{};
-      // تقدير نطاق الخلايا
+      // تحديد نطاق الخلايا
       int maxRow = 0;
       int maxCol = 0;
-      for (final cell in sheet.cells.values) {
-        allCells['${cell.row}:${cell.col}'] = cell;
-        if (cell.row > maxRow) maxRow = cell.row;
-        if (cell.col > maxCol) maxCol = cell.col;
+      final cellEntries = <(int row, int col, Cell cell)>[];
+      for (final entry in sheet.cells.entries) {
+        final parsed = Cell.parseReference(entry.key);
+        if (parsed == null) continue;
+        final (row, col) = parsed;
+        cellEntries.add((row, col, entry.value));
+        if (row > maxRow) maxRow = row;
+        if (col > maxCol) maxCol = col;
       }
 
       // كتابة الخلايا
-      for (int r = 0; r <= maxRow; r++) {
-        for (int c = 0; c <= maxCol; c++) {
-          final cell = allCells['$r:$c'];
-          if (cell != null && !cell.isEmpty) {
-            final cellCoord = excel_lib.CellIndex.indexByColumnRow(
-              columnIndex: c,
-              rowIndex: r,
-            );
+      for (final (row, col, cell) in cellEntries) {
+        final cellCoord = excel_lib.CellIndex.indexByColumnRow(
+          columnIndex: col,
+          rowIndex: row,
+        );
 
-            // تعيين القيمة
-            if (cell.type == CellType.number) {
-              final numVal = double.tryParse(cell.rawValue ?? '');
-              if (numVal != null) {
-                excelSheet.cell(cellCoord).value = excel_lib.Data(numVal);
-              }
-            } else if (cell.type == CellType.formula) {
-              excelSheet.cell(cellCoord).value =
-                  excel_lib.TextCellValue(cell.rawValue ?? '');
-            } else {
-              excelSheet.cell(cellCoord).value =
-                  excel_lib.TextCellValue(cell.rawValue ?? '');
-            }
+        final targetCell = excelSheet.cell(cellCoord);
 
-            // تنسيق الخلية
-            final cellStyle = excel_lib.CellStyle(
-              fontFamily: getFontFamily(),
-              fontSize: cell.format.fontSize ?? 14,
-              fontColorHex: cell.format.textColor != null
-                  ? '#${cell.format.textColor!.value.toRadixString(16).substring(2).padLeft(6, '0')}'
-                  : '#000000',
-              backgroundColorHex: cell.format.backgroundColor != null
-                  ? '#${cell.format.backgroundColor!.value.toRadixString(16).substring(2).padLeft(6, '0')}'
-                  : '#FFFFFF',
-              bold: cell.format.fontWeight == FontWeightOption.bold,
-              italic: cell.format.italic ?? false,
-              underline: cell.format.underline ?? false,
-            );
-            excelSheet.cell(cellCoord).style = cellStyle;
+        // تعيين القيمة
+        if (cell.type == CellType.number) {
+          final numVal = num.tryParse(cell.rawValue);
+          if (numVal != null) {
+            targetCell.value = numVal;
+          } else {
+            targetCell.value = cell.rawValue;
           }
+        } else if (cell.type == CellType.formula) {
+          targetCell.value = cell.rawValue;
+        } else {
+          targetCell.value = cell.rawValue;
         }
+
+        // تنسيق الخلية — استخدام TextStyleModel
+        final style = cell.style;
+        targetCell.style = excel_lib.CellStyle(
+          fontFamily: getFontFamily(),
+          fontSize: style.fontSize,
+          fontColorHex:
+              '#${style.fontColor.toRadixString(16).padLeft(8, '0').substring(2)}',
+          backgroundColorHex:
+              '#${style.backgroundColor.toRadixString(16).padLeft(8, '0').substring(2)}',
+          bold: style.isBold,
+          italic: style.isItalic,
+          underline: style.isUnderline,
+        );
       }
     }
 
@@ -88,7 +85,7 @@ class ExcelService {
 
     final sheets = <Sheet>[];
     for (final excelSheet in excel.sheets.values) {
-      final sheet = Sheet(
+      var sheet = Sheet(
         id: excelSheet.name ?? 'ورقة',
         name: excelSheet.name ?? 'ورقة',
       );
@@ -98,22 +95,28 @@ class ExcelService {
           final cellObj = excelSheet.cell(
             excel_lib.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r),
           );
-          if (cellObj != null && cellObj.value != null) {
+          if (cellObj.value != null) {
             final value = cellObj.value?.toString() ?? '';
-            sheet.setCell(r, c, value);
+            sheet = sheet.setCellAt(r, c, value);
 
             // تطبيق التنسيق
-            final style = cellObj.style;
-            if (style != null) {
-              final cell = sheet.getCell(r, c);
-              cell.format = cell.format.copyWith(
-                fontSize: style.fontSize?.toDouble(),
-                fontWeight: style.bold == true
-                    ? FontWeightOption.bold
-                    : FontWeightOption.normal,
-                italic: style.italic,
-                underline: style.underline,
-              );
+            final xlStyle = cellObj.style;
+            if (xlStyle != null) {
+              final cellRef = '${Cell.columnLetters(c)}${r + 1}';
+              final existingCell = sheet.getExistingCell(cellRef);
+              if (existingCell != null) {
+                final newStyle = existingCell.style.copyWith(
+                  fontSize: xlStyle.fontSize?.toDouble(),
+                  isBold: xlStyle.bold == true,
+                  isItalic: xlStyle.italic == true,
+                  isUnderline: xlStyle.underline == true,
+                );
+                final updatedCell = existingCell.copyWith(style: newStyle);
+                sheet = sheet.copyWith(
+                  cells: Map<String, Cell>.from(sheet.cells)
+                    ..[cellRef] = updatedCell,
+                );
+              }
             }
           }
         }
@@ -133,20 +136,23 @@ class ExcelService {
     final sheet = workbook.activeSheet;
     final buffer = StringBuffer();
 
-    // تجميع الخلايا
-    final allCells = <String, Cell>{};
+    // تحديد نطاق الخلايا
     int maxRow = 0;
     int maxCol = 0;
-    for (final cell in sheet.cells.values) {
-      allCells['${cell.row}:${cell.col}'] = cell;
-      if (cell.row > maxRow) maxRow = cell.row;
-      if (cell.col > maxCol) maxCol = cell.col;
+    final cellMap = <String, Cell>{};
+    for (final entry in sheet.cells.entries) {
+      final parsed = Cell.parseReference(entry.key);
+      if (parsed == null) continue;
+      final (row, col) = parsed;
+      cellMap['$row:$col'] = entry.value;
+      if (row > maxRow) maxRow = row;
+      if (col > maxCol) maxCol = col;
     }
 
     for (int r = 0; r <= maxRow; r++) {
       for (int c = 0; c <= maxCol; c++) {
         if (c > 0) buffer.write(',');
-        final cell = allCells['$r:$c'];
+        final cell = cellMap['$r:$c'];
         if (cell != null && !cell.isEmpty) {
           String val = cell.displayValue;
           if (val.contains(',') || val.contains('"') || val.contains('\n')) {
@@ -173,7 +179,7 @@ class ExcelService {
     final content = await file.readAsString();
     final lines = content.split('\n');
 
-    final sheet = Sheet(
+    var sheet = Sheet(
       id: 'sheet1',
       name: filePath.split('/').last.replaceAll('.csv', ''),
     );
@@ -182,7 +188,7 @@ class ExcelService {
       if (lines[r].trim().isEmpty) continue;
       final values = _parseCsvLine(lines[r]);
       for (int c = 0; c < values.length; c++) {
-        sheet.setCell(r, c, values[c]);
+        sheet = sheet.setCellAt(r, c, values[c]);
       }
     }
 

@@ -3,7 +3,11 @@ import '../models/sheet.dart';
 import '../models/cell.dart';
 import 'formula_parser.dart';
 
-/// محرك الصيغ الرئيسي - يجمع بين المحلل والمقيم
+/// محرك الصيغ الرئيسي - يجمع بين المحلل والمقيم.
+///
+/// ملاحظة: هذا المحرك مؤقت لحين اكتمال دمج computedValue مع Cell.
+/// حالياً يقوم بتقييم الصيغ وإرجاع القيم دون تعديل الخلايا مباشرة
+/// (لأن computedValue أصبح حقلاً نهائياً في Cell).
 class FormulaEngine {
   final Workbook _workbook;
 
@@ -23,23 +27,25 @@ class FormulaEngine {
 
   /// الحصول على قيمة خلية من مرجع (مثل A1)
   dynamic _getCellValue(String ref, Sheet sheet) {
-    final (row, col) = Cell.parseReference(ref);
-    if (row < 0 || col < 0) return 0;
+    final parsed = Cell.parseReference(ref);
+    if (parsed == null) return 0;
+    final (row, col) = parsed;
 
-    final cell = sheet.getCell(row, col);
+    final cell = sheet.getCellAt(row, col);
     if (cell.isEmpty) return 0;
 
     if (cell.type == CellType.formula) {
+      // إذا كانت القيمة محسوبة مسبقاً نعيدها
       if (cell.computedValue != null) return cell.computedValue;
-      // تجنب الحلقات اللانهائية - تقييم بسيط
+      // تجنب الحلقات اللانهائية
       return 0;
     }
 
     if (cell.type == CellType.number) {
-      return double.tryParse(cell.rawValue ?? '') ?? 0;
+      return double.tryParse(cell.rawValue) ?? 0;
     }
 
-    return cell.rawValue ?? '';
+    return cell.rawValue;
   }
 
   /// الحصول على نطاق قيم (مثل A1:C3)
@@ -47,40 +53,57 @@ class FormulaEngine {
     final parts = ref.split(':');
     if (parts.length != 2) return [];
 
-    final (startRow, startCol) = Cell.parseReference(parts[0]);
-    final (endRow, endCol) = Cell.parseReference(parts[1]);
+    final startParsed = Cell.parseReference(parts[0]);
+    final endParsed = Cell.parseReference(parts[1]);
+    if (startParsed == null || endParsed == null) return [];
 
-    if (startRow < 0 || startCol < 0 || endRow < 0 || endCol < 0) return [];
+    final (startRow, startCol) = startParsed;
+    final (endRow, endCol) = endParsed;
 
     final result = <List<dynamic>>[];
     for (int r = startRow; r <= endRow; r++) {
       final row = <dynamic>[];
       for (int c = startCol; c <= endCol; c++) {
-        row.add(_getCellValue('${Cell.columnLetters(c)}${r + 1}', sheet));
+        final cellRef = '${Cell.columnLetters(c)}${r + 1}';
+        row.add(_getCellValue(cellRef, sheet));
       }
       result.add(row);
     }
     return result;
   }
 
-  /// إعادة حساب جميع الصيغ في الورقة
-  void recalculateSheet(Sheet sheet) {
+  /// إعادة حساب جميع الصيغ في ورقة (يُعيد ورقة جديدة بخلايا محدّثة)
+  Sheet recalculateSheet(Sheet sheet) {
+    var updatedSheet = sheet;
     for (final cell in sheet.cells.values) {
-      if (cell.type == CellType.formula && cell.formula != null) {
+      if (cell.type == CellType.formula && cell.rawValue.startsWith('=')) {
+        final formulaText = cell.rawValue.substring(1); // إزالة =
         try {
-          cell.computedValue = evaluate(cell.formula!, sheet: sheet);
+          final result = evaluate(formulaText, sheet: updatedSheet);
+          final updatedCell = cell.copyWith(computedValue: result);
+          updatedSheet = updatedSheet.copyWith(
+            cells: Map<String, Cell>.from(updatedSheet.cells)
+              ..[cell.id] = updatedCell,
+          );
         } catch (e) {
-          cell.computedValue = '#ERROR';
+          final errorCell = cell.copyWith(computedValue: '#ERROR');
+          updatedSheet = updatedSheet.copyWith(
+            cells: Map<String, Cell>.from(updatedSheet.cells)
+              ..[cell.id] = errorCell,
+          );
         }
       }
     }
+    return updatedSheet;
   }
 
-  /// إعادة حساب جميع الصيغ في المصنف
-  void recalculateAll() {
+  /// إعادة حساب جميع الصيغ في المصنف (يُعيد مصنفاً جديداً)
+  Workbook recalculateAll() {
+    var updatedSheets = <Sheet>[];
     for (final sheet in _workbook.sheets) {
-      recalculateSheet(sheet);
+      updatedSheets.add(recalculateSheet(sheet));
     }
+    return _workbook.copyWith(sheets: updatedSheets);
   }
 
   /// التحقق من صحة الصيغة
