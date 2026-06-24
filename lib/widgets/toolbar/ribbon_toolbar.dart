@@ -66,10 +66,10 @@ void _applyStyle(WidgetRef ref, CellPosition? sel, TextStyleModel newStyle) {
 /// شريط أدوات علوي (Ribbon) مخصص للأجهزة اللوحية.
 ///
 /// ينقسم إلى 4 تبويبات:
-/// - **الصفحة الرئيسية**: خط، ألوان، محاذاة، تراجع
-/// - **إدراج**: (قريباً)
-/// - **صيغ**: (قريباً)
-/// - **AI**: (قريباً)
+/// - **الصفحة الرئيسية**: خط، ألوان، محاذاة، تراجع/إعادة
+/// - **إدراج**: إدراج صف، عمود، ورقة، صورة، مخطط بياني
+/// - **صيغ**: إدراج دوال (SUM, AVERAGE, COUNT, MIN, MAX, IF, …)
+/// - **AI**: المساعد الذكي (قريباً)
 ///
 /// يقرأ [activeCellProvider] و [selectedCellProvider] للمزامنة،
 /// ويستخدم [applyStyleToCell] لتطبيق التعديلات.
@@ -111,9 +111,9 @@ class _RibbonToolbarState extends ConsumerState<RibbonToolbar> {
       case 0:
         return const _HomeTab();
       case 1:
-        return const _PlaceholderTab(Icons.add_circle_outline, 'إدراج — قريباً');
+        return const _InsertTab();
       case 2:
-        return const _PlaceholderTab(Icons.functions, 'الصيغ — قريباً');
+        return const _FormulasTab();
       case 3:
         return const _PlaceholderTab(Icons.auto_awesome, 'المساعد الذكي — قريباً');
       default:
@@ -313,6 +313,237 @@ class _HomeTab extends ConsumerWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// التبويب: إدراج (Insert)
+// =============================================================================
+
+class _InsertTab extends ConsumerWidget {
+  const _InsertTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      height: 110,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        child: Row(
+          textDirection: TextDirection.rtl,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Section(
+              label: 'صفوف',
+              children: [
+                _InsertBtn(
+                  icon: Icons.table_rows_above,
+                  tooltip: 'إدراج صف للأعلى',
+                  onTap: () => _showComingSoon(context, 'إدراج صف'),
+                ),
+                _InsertBtn(
+                  icon: Icons.table_rows_below,
+                  tooltip: 'إدراج صف للأسفل',
+                  onTap: () => _showComingSoon(context, 'إدراج صف'),
+                ),
+              ],
+            ),
+            _Section(
+              label: 'أعمدة',
+              children: [
+                _InsertBtn(
+                  icon: Icons.view_column_left,
+                  tooltip: 'إدراج عمود لليسار',
+                  onTap: () => _showComingSoon(context, 'إدراج عمود'),
+                ),
+                _InsertBtn(
+                  icon: Icons.view_column_right,
+                  tooltip: 'إدراج عمود لليمين',
+                  onTap: () => _showComingSoon(context, 'إدراج عمود'),
+                ),
+              ],
+            ),
+            _Section(
+              label: 'ورقة',
+              children: [
+                _InsertBtn(
+                  icon: Icons.add_circle_outline,
+                  tooltip: 'إدراج ورقة جديدة',
+                  onTap: () {
+                    final notifier = ref.read(workbookProvider.notifier);
+                    notifier.addSheet();
+                    notifier.setStatusMessage('➕ تم إضافة ورقة جديدة');
+                  },
+                ),
+              ],
+            ),
+            _Section(
+              label: 'أخرى',
+              children: [
+                _InsertBtn(
+                  icon: Icons.image_outlined,
+                  tooltip: 'صورة',
+                  onTap: () => _showComingSoon(context, 'إدراج صورة'),
+                ),
+                _InsertBtn(
+                  icon: Icons.bar_chart_outlined,
+                  tooltip: 'مخطط بياني',
+                  onTap: () => _showComingSoon(context, 'مخطط بياني'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static void _showComingSoon(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$feature — قريباً', style: const TextStyle(fontFamily: 'Cairo')),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// التبويب: صيغ (Formulas)
+// =============================================================================
+
+/// قائمة الدوال المدعومة مع تصنيفاتها.
+class _FunctionEntry {
+  final String name;
+  final String description;
+  final String formula;
+
+  const _FunctionEntry(this.name, this.description, this.formula);
+}
+
+const List<_FunctionEntry> _functionEntries = [
+  _FunctionEntry('SUM', 'مجموع', '=SUM('),
+  _FunctionEntry('AVERAGE', 'متوسط', '=AVERAGE('),
+  _FunctionEntry('COUNT', 'عدد', '=COUNT('),
+  _FunctionEntry('MIN', 'أصغر', '=MIN('),
+  _FunctionEntry('MAX', 'أكبر', '=MAX('),
+  _FunctionEntry('IF', 'شرط', '=IF('),
+  _FunctionEntry('CONCAT', 'دمج', '=CONCAT('),
+  _FunctionEntry('ROUND', 'تقريب', '=ROUND('),
+  _FunctionEntry('ABS', 'قيمة مطلقة', '=ABS('),
+  _FunctionEntry('SQRT', 'جذر تربيعي', '=SQRT('),
+  _FunctionEntry('POWER', 'أس', '=POWER('),
+  _FunctionEntry('NOW', 'الآن', '=NOW()'),
+  _FunctionEntry('TODAY', 'اليوم', '=TODAY()'),
+];
+
+class _FormulasTab extends ConsumerWidget {
+  const _FormulasTab();
+
+  void _insertFormula(WidgetRef ref, BuildContext context, String formula) {
+    final selected = ref.read(selectedCellProvider);
+    if (selected == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('اختر خلية أولاً', style: TextStyle(fontFamily: 'Cairo')),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+    ref.read(workbookProvider.notifier).updateCellRealtime(
+          selected.sheetId,
+          selected.ref,
+          formula,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      height: 110,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        child: Row(
+          textDirection: TextDirection.rtl,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Section(
+              label: 'إدراج دالة',
+              children: [
+                for (final entry in _functionEntries)
+                  _FunctionBtn(
+                    name: entry.name,
+                    description: entry.description,
+                    onInsert: () => _insertFormula(ref, context, entry.formula),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// زر دالة في تبويب الصيغ.
+class _FunctionBtn extends StatelessWidget {
+  final String name;
+  final String description;
+  final VoidCallback? onInsert;
+
+  const _FunctionBtn({
+    required this.name,
+    required this.description,
+    this.onInsert,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: description,
+      preferBelow: false,
+      child: GestureDetector(
+        onTap: onInsert,
+        child: Container(
+          width: 56,
+          height: _kMinBtn + 16,
+          margin: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.grey.shade400),
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1B5E20),
+                  fontFamily: 'Cairo',
+                ),
+              ),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Colors.grey.shade600,
+                  fontFamily: 'Cairo',
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -567,6 +798,44 @@ class _SizeBtn extends StatelessWidget {
         height: _kMinBtn,
         alignment: Alignment.center,
         child: Icon(icon, size: 16, color: Colors.black54),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _InsertBtn — زر إدراج مع أيقونة (لشريط الإدراج)
+// ---------------------------------------------------------------------------
+
+class _InsertBtn extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _InsertBtn({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: _kMinBtn,
+          height: _kMinBtn,
+          margin: const EdgeInsets.all(1),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade400),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, size: 22, color: Colors.black87),
+        ),
       ),
     );
   }
