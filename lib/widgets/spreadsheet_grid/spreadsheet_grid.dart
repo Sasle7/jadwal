@@ -234,14 +234,12 @@ class _SpreadsheetGridState extends ConsumerState<SpreadsheetGrid> {
       frozenRowsCount: 1,
       columnResizeMode: ColumnResizeMode.onResizeEnd,
       defaultColumnWidth: 120,
-      cellPadding: const EdgeInsets.all(2),
-
       // أعمدة
       columns: [
         GridColumn(
           columnName: 'rowHeader',
           width: 50,
-          columnBuilder: (context) => _buildColumnHeader('#'),
+          label: _buildColumnHeader('#'),
         ),
         for (int c = 0; c < sheet.columnCount; c++)
           GridColumn(
