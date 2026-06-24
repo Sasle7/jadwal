@@ -69,27 +69,50 @@ jobs:
           fi
 
       # =========================================================================
-      # 4. الحصول على التبعيات
+      # 4. إصلاح تعارض Kotlin stdlib (transitive dep pulls kotlin-stdlib-jdk8:1.7.10)
+      # =========================================================================
+      - name: 🔧 Fix Kotlin stdlib conflict in app/build.gradle
+        run: |
+          cat >> android/app/build.gradle << 'EOF'
+
+          // Kotlin ≥1.8 دمج kotlin-stdlib-jdk7/jdk8 في kotlin-stdlib
+          dependencies {
+              modules {
+                  module("org.jetbrains.kotlin:kotlin-stdlib-jdk7") {
+                      replacedBy("org.jetbrains.kotlin:kotlin-stdlib",
+                          "kotlin-stdlib-jdk7 is now part of kotlin-stdlib")
+                  }
+                  module("org.jetbrains.kotlin:kotlin-stdlib-jdk8") {
+                      replacedBy("org.jetbrains.kotlin:kotlin-stdlib",
+                          "kotlin-stdlib-jdk8 is now part of kotlin-stdlib")
+                  }
+              }
+          }
+          EOF
+          echo "✅ Patched app/build.gradle with Kotlin stdlib module replacement"
+
+      # =========================================================================
+      # 5. الحصول على التبعيات
       # =========================================================================
       - name: 📦 Get dependencies
         run: flutter pub get
 
       # =========================================================================
-      # 5. التحليل الثابت (اختياري)
+      # 6. التحليل الثابت (اختياري)
       # =========================================================================
       - name: 🔍 Analyze code
         run: flutter analyze || true
         continue-on-error: true
 
       # =========================================================================
-      # 6. تشغيل الاختبارات
+      # 7. تشغيل الاختبارات
       # =========================================================================
       - name: 🧪 Run tests
         run: flutter test
         continue-on-error: true
 
       # =========================================================================
-      # 7. بناء APK
+      # 8. بناء APK
       # =========================================================================
       - name: 🏗️ Build APK
         run: |
@@ -101,7 +124,7 @@ jobs:
           fi
 
       # =========================================================================
-      # 8. رفع APK كـ Artifact
+      # 9. رفع APK كـ Artifact
       # =========================================================================
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -112,7 +135,7 @@ jobs:
           retention-days: 30
 
       # =========================================================================
-      # 9. إنشاء Release (عند الدفع بـ Tag)
+      # 10. إنشاء Release (عند الدفع بـ Tag)
       # =========================================================================
       - name: 🏷️ Create Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -127,7 +150,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # =========================================================================
-      # 10. إشعار النجاح
+      # 11. إشعار النجاح
       # =========================================================================
       - name: ✅ Show build summary
         run: |
