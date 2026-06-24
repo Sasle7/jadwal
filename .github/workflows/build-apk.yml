@@ -1,0 +1,138 @@
+name: 🏗️ Build Jadwal APK
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'نوع البناء (debug / release)'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.22.x'
+
+jobs:
+  build:
+    name: 📱 Build APK (${{ inputs.build_type || 'debug' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      # =========================================================================
+      # 1. سحب الكود
+      # =========================================================================
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+
+      # =========================================================================
+      # 2. إعداد Flutter SDK
+      # =========================================================================
+      - name: 🔧 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: 📋 Show Flutter version
+        run: flutter --version
+
+      # =========================================================================
+      # 3. إنشاء ملفات المنصات إذا لم تكن موجودة
+      # =========================================================================
+      - name: 🏗️ Generate Android platform files
+        run: |
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            echo "⏳ Generating Android platform files..."
+            # إنشاء مشروع مؤقت ثم نسخ مجلد android
+            cd /tmp
+            flutter create --project-name jadwal --platforms=android tmp_jadwal
+            cd "$GITHUB_WORKSPACE"
+            cp -r /tmp/tmp_jadwal/android .
+            rm -rf /tmp/tmp_jadwal
+            echo "✅ Android files generated"
+          else
+            echo "✅ Android files already exist"
+          fi
+
+      # =========================================================================
+      # 4. الحصول على التبعيات
+      # =========================================================================
+      - name: 📦 Get dependencies
+        run: flutter pub get
+
+      # =========================================================================
+      # 5. التحليل الثابت (اختياري)
+      # =========================================================================
+      - name: 🔍 Analyze code
+        run: flutter analyze || true
+        continue-on-error: true
+
+      # =========================================================================
+      # 6. تشغيل الاختبارات
+      # =========================================================================
+      - name: 🧪 Run tests
+        run: flutter test
+        continue-on-error: true
+
+      # =========================================================================
+      # 7. بناء APK
+      # =========================================================================
+      - name: 🏗️ Build APK
+        run: |
+          BUILD_TYPE="${{ inputs.build_type || 'debug' }}"
+          if [ "$BUILD_TYPE" = "release" ]; then
+            flutter build apk --release --target-platform android-arm,android-arm64
+          else
+            flutter build apk --debug --target-platform android-arm,android-arm64
+          fi
+
+      # =========================================================================
+      # 8. رفع APK كـ Artifact
+      # =========================================================================
+      - name: 📤 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadwal-${{ inputs.build_type || 'debug' }}-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/*.apk
+          compression-level: 0
+          retention-days: 30
+
+      # =========================================================================
+      # 9. إنشاء Release (عند الدفع بـ Tag)
+      # =========================================================================
+      - name: 🏷️ Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/*.apk
+          name: جدول ${{ github.ref_name }}
+          body_path: update/P2-ui-widgets-compatibility.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # =========================================================================
+      # 10. إشعار النجاح
+      # =========================================================================
+      - name: ✅ Show build summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✅ تم بناء APK بنجاح!"
+          echo "  📁 المسار: build/app/outputs/flutter-apk/"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          ls -lh build/app/outputs/flutter-apk/ 2>/dev/null || echo "ℹ️  No APK found (expected on first run without Android files)"

@@ -1,0 +1,70 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+.metadata
+
+# IntelliJ
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub/
+build/
+*.g.dart
+*.freezed.dart
+
+# Android
+*.apk
+*.aab
+*.dex
+*.ap_
+.Android
+android/.gradle/
+android/app/build/
+android/build/
+local.properties
+
+# iOS
+ios/.symlinks/
+ios/Pods/
+ios/Runner.xcworkspace/
+ios/Runner/GeneratedPluginRegistrant.*
+
+# macOS
+macos/Runner.xcworkspace/
+macos/Pods/
+
+# Web
+web/build/
+
+# Windows
+windows/Runner.recipe
+windows/runner/GeneratedPluginRegistrant.*
+
+# Linux
+linux/Runner.recipe
+linux/runner/GeneratedPluginRegistrant.*
+
+# Env
+.env
+.env.local
+*.env
+
+# Hive
+*.hive
+*.lock
