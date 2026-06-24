@@ -108,7 +108,7 @@ class _SpreadsheetScreenState extends ConsumerState<SpreadsheetScreen> {
         // تبويبات شريط الأدوات داخل AppBar
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(52),
-          child: SpreadsheetToolbar(),
+          child: RibbonToolbar(),
         ),
       ),
 
